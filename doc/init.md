@@ -14,7 +14,7 @@
 | 2️⃣       | 组成 3 人团队，确定团队名称并创建团队专属 GitHub 账户            |
 | 3️⃣       | 向老师报告团队成员名单、GitHub ID、团队 GitHub 地址             |
 | 4️⃣       | 在团队仓库中编写第一篇报告（以 Issue 形式提交）                  |
-| 5️⃣       | 阅读往年作品，参考经典讲义： [现代软件工程讲义目录](https://www.cnblogs.com/math) |
+| 5️⃣       | 阅读往年作品，参考经典讲义： [现代软件工程讲义目录](https://www.cnblogs.com/xinz/archive/2011/11/27/2265425.html) |
 
 ---
 
@@ -102,7 +102,7 @@ GitHub Issue 可用作简洁的“项目日志、任务分解或开发日志”�
 ## 📌 今日会议摘要（2025-XX-XX）
 
 - 阅读任务：
-  - 讲义：[现代软件工程讲义目录](https://www.cnblogs.com/math)
+  - 讲义：[现代软件工程讲义目录](https://www.cnblogs.com/xinz/archive/2011/11/27/2265425.html)
   - 参考项目：https://github.com/上一届同学的项目链接
 - 分工设定：
   - 张三负责项目初始化与目录结构
