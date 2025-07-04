@@ -1,0 +1,21 @@
+# 测试输出目录
+output/
+
+# 临时文件
+*.tmp
+*.temp
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 测试生成的数据文件
+demo_teams.csv
+demo_teams.json
+test_*.csv
+test_*.json
+
+# 日志文件
+*.log 

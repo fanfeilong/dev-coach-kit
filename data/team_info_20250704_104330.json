@@ -1,0 +1,31 @@
+{
+  "export_time": "2025-07-04T10:43:30.994300",
+  "total_teams": 1,
+  "teams": [
+    {
+      "team_name": "Team Delta",
+      "members": [
+        {
+          "name": "张三",
+          "github_id": "zhangsan",
+          "github_url": "https://github.com/zhangsan"
+        },
+        {
+          "name": "李四",
+          "github_id": "lisi",
+          "github_url": "https://github.com/lisi"
+        },
+        {
+          "name": "王五",
+          "github_id": "wangwu",
+          "github_url": "https://github.com/wangwu"
+        }
+      ],
+      "team_github_account": "sw-team-delta",
+      "team_repo_url": "https://github.com/sw-team-delta/sw-project-demo",
+      "submission_time": "2025-XX-XX",
+      "comment_id": 3034196180,
+      "comment_author": "fanfeilong"
+    }
+  ]
+}
