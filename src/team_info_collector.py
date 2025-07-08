@@ -164,34 +164,26 @@ class GitHubTeamInfoCollector:
         return teams
     
     def export_to_csv(self, teams: List[TeamInfo], filename: str):
-        """导出为 CSV 格式（团队信息，含编号）"""
+        """导出为 CSV 格式（团队信息，紧凑风格，含编号，按人数排序）"""
+        # 按团队人数排序，人数多的在前面
+        sorted_teams = sorted(teams, key=lambda team: len(team.members), reverse=True)
         with open(filename, 'w', newline='', encoding='utf-8-sig') as csvfile:
             writer = csv.writer(csvfile)
-            
-            # 写入表头
+            # 写入表头（紧凑风格）
             writer.writerow([
-                '团队编号', '团队名称', '成员1姓名', '成员1GitHub', '成员1链接',
-                '成员2姓名', '成员2GitHub', '成员2链接',
-                '成员3姓名', '成员3GitHub', '成员3链接',
-                '团队GitHub账户', '团队仓库地址', '提交时间', '评论作者'
+                '团队编号', '团队名称', '成员数量', '团队成员', '团队GitHub账户', '团队仓库地址'
             ])
-            
-            # 写入数据（按编号顺序）
-            for idx, team in enumerate(teams, 1):
-                row = [str(idx), team.team_name]
-                # 处理成员信息（最多3个成员）
-                for i in range(3):
-                    if i < len(team.members):
-                        member = team.members[i]
-                        row.extend([member.name, member.github_id, member.github_url])
-                    else:
-                        row.extend(['', '', ''])
-                row.extend([
+            # 写入数据
+            for idx, team in enumerate(sorted_teams, 1):
+                members_text = ', '.join([f"{member.name}(@{member.github_id})" for member in team.members])
+                row = [
+                    str(idx),
+                    team.team_name,
+                    str(len(team.members)),
+                    members_text,
                     team.team_github_account,
-                    team.team_repo_url,
-                    team.submission_time,
-                    team.comment_author
-                ])
+                    team.team_repo_url
+                ]
                 writer.writerow(row)
         print(f"💾 团队信息 CSV 文件已保存: {filename} (UTF-8 with BOM，Excel 兼容)")
 
@@ -258,7 +250,9 @@ class GitHubTeamInfoCollector:
         print(f"💾 成员信息 JSON 文件已保存: {filename}")
     
     def export_to_markdown(self, teams: List[TeamInfo], filename: str):
-        """导出为 Markdown 格式（包含团队和成员信息，含编号和汇总）"""
+        """导出为 Markdown 格式（团队信息紧凑风格，含编号，按人数排序）"""
+        # 按团队人数排序，人数多的在前面
+        sorted_teams = sorted(teams, key=lambda team: len(team.members), reverse=True)
         # 汇总统计
         total_teams = len(teams)
         total_members = sum(len(team.members) for team in teams)
@@ -266,8 +260,7 @@ class GitHubTeamInfoCollector:
         for team in teams:
             n = len(team.members)
             group_sizes[n] = group_sizes.get(n, 0) + 1
-        group_size_summary = ', '.join([f"{size}人组: {count}个" for size, count in sorted(group_sizes.items())])
-
+        group_size_summary = ', '.join([f"{size}人组: {count}个" for size, count in sorted(group_sizes.items(), reverse=True)])
         with open(filename, 'w', encoding='utf-8') as f:
             # 写入标题和统计信息
             f.write(f"# 📊 团队信息汇总报告\n\n")
@@ -276,28 +269,21 @@ class GitHubTeamInfoCollector:
             f.write(f"- 总团队数：{total_teams}\n")
             f.write(f"- 总成员数：{total_members}\n")
             f.write(f"- 团队规模分布：{group_size_summary}\n\n")
-            
-            # 团队信息表格
+            # 团队信息表格（紧凑风格）
             f.write("## 👥 团队信息\n\n")
-            f.write("| 团队编号 | 团队名称 | 成员1姓名 | 成员1GitHub | 成员1链接 | 成员2姓名 | 成员2GitHub | 成员2链接 | 成员3姓名 | 成员3GitHub | 成员3链接 | 团队GitHub账户 | 团队仓库地址 | 提交时间 | 评论作者 |\n")
-            f.write("|----------|----------|-----------|-------------|-----------|-----------|-------------|-----------|-----------|-------------|-----------|----------------|--------------|----------|----------|\n")
-            for idx, team in enumerate(teams, 1):
-                members_info = []
-                for i in range(3):
-                    if i < len(team.members):
-                        member = team.members[i]
-                        members_info.extend([member.name, member.github_id, member.github_url])
-                    else:
-                        members_info.extend(['', '', ''])
-                row = [str(idx), team.team_name, *members_info, team.team_github_account, team.team_repo_url, team.submission_time, team.comment_author]
+            f.write("| 团队编号 | 团队名称 | 成员数量 | 团队成员 | 团队GitHub账户 | 团队仓库地址 |\n")
+            f.write("|----------|----------|----------|----------|----------------|--------------|\n")
+            for idx, team in enumerate(sorted_teams, 1):
+                members_text = ', '.join([f"{member.name}(@{member.github_id})" for member in team.members])
+                row = [str(idx), team.team_name, str(len(team.members)), members_text, team.team_github_account, team.team_repo_url]
                 f.write("| " + " | ".join(row) + " |\n")
             f.write("\n")
-            # 成员信息表格
+            # 成员信息表格（保持原样）
             f.write("## 👤 成员信息\n\n")
             f.write("| 成员编号 | 团队名称 | 成员姓名 | GitHub ID | GitHub 链接 | 团队GitHub账户 | 团队仓库地址 | 提交时间 | 评论作者 |\n")
             f.write("|----------|----------|----------|-----------|-------------|----------------|--------------|----------|----------|\n")
             idx = 1
-            for team in teams:
+            for team in sorted_teams:
                 for member in team.members:
                     row = [str(idx), team.team_name, member.name, member.github_id, member.github_url, team.team_github_account, team.team_repo_url, team.submission_time, team.comment_author]
                     f.write("| " + " | ".join(row) + " |\n")
