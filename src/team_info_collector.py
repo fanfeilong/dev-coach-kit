@@ -23,6 +23,8 @@ from pathlib import Path
 import requests
 from dataclasses import dataclass, asdict
 import markdown
+import webbrowser
+import sys
 
 
 @dataclass
@@ -163,22 +165,29 @@ class GitHubTeamInfoCollector:
         print(f"📊 共收集到 {len(teams)} 个团队信息")
         return teams
     
-    def export_to_csv(self, teams: List[TeamInfo], filename: str):
-        """导出为 CSV 格式（团队信息，紧凑风格，含编号，按人数排序）"""
-        # 按团队人数排序，人数多的在前面
+    def export_to_csv(self, teams: List[TeamInfo], filename: str, invalid_team_names: set = None, member_count_issues: list = None):
+        """导出为 CSV 格式（团队信息，紧凑风格，含编号，按人数排序，标记不合规团队）"""
+        invalid_team_names = invalid_team_names or set()
+        member_count_issues = member_count_issues or []
         sorted_teams = sorted(teams, key=lambda team: len(team.members), reverse=True)
         with open(filename, 'w', newline='', encoding='utf-8-sig') as csvfile:
             writer = csv.writer(csvfile)
-            # 写入表头（紧凑风格）
+            # 输出警告
+            if member_count_issues:
+                writer.writerow(["⚠️ 警告：以下团队成员数量不合规"])
+                for warn in member_count_issues:
+                    writer.writerow([warn])
+                writer.writerow([])
+            # 写入表头
             writer.writerow([
                 '团队编号', '团队名称', '成员数量', '团队成员', '团队GitHub账户', '团队仓库地址'
             ])
-            # 写入数据
             for idx, team in enumerate(sorted_teams, 1):
                 members_text = ', '.join([f"{member.name}(@{member.github_id})" for member in team.members])
+                mark = '⚠️' if team.team_name in invalid_team_names else ''
                 row = [
                     str(idx),
-                    team.team_name,
+                    f"{team.team_name}{mark}",
                     str(len(team.members)),
                     members_text,
                     team.team_github_account,
@@ -249,11 +258,11 @@ class GitHubTeamInfoCollector:
         
         print(f"💾 成员信息 JSON 文件已保存: {filename}")
     
-    def export_to_markdown(self, teams: List[TeamInfo], filename: str):
-        """导出为 Markdown 格式（团队信息紧凑风格，含编号，按人数排序）"""
-        # 按团队人数排序，人数多的在前面
+    def export_to_markdown(self, teams: List[TeamInfo], filename: str, invalid_team_names: set = None, member_count_issues: list = None):
+        """导出为 Markdown 格式（团队信息紧凑风格，含编号，按人数排序，标记不合规团队）"""
+        invalid_team_names = invalid_team_names or set()
+        member_count_issues = member_count_issues or []
         sorted_teams = sorted(teams, key=lambda team: len(team.members), reverse=True)
-        # 汇总统计
         total_teams = len(teams)
         total_members = sum(len(team.members) for team in teams)
         group_sizes = {}
@@ -262,20 +271,26 @@ class GitHubTeamInfoCollector:
             group_sizes[n] = group_sizes.get(n, 0) + 1
         group_size_summary = ', '.join([f"{size}人组: {count}个" for size, count in sorted(group_sizes.items(), reverse=True)])
         with open(filename, 'w', encoding='utf-8') as f:
-            # 写入标题和统计信息
             f.write(f"# 📊 团队信息汇总报告\n\n")
             f.write(f"**导出时间：** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
             f.write(f"**统计信息：**\n")
             f.write(f"- 总团队数：{total_teams}\n")
             f.write(f"- 总成员数：{total_members}\n")
             f.write(f"- 团队规模分布：{group_size_summary}\n\n")
-            # 团队信息表格（紧凑风格）
+            # 输出警告
+            if member_count_issues:
+                f.write(f"⚠️ **警告：以下团队成员数量不合规**\n\n")
+                for warn in member_count_issues:
+                    f.write(f"- {warn}\n")
+                f.write("\n")
+            # 团队信息表格
             f.write("## 👥 团队信息\n\n")
             f.write("| 团队编号 | 团队名称 | 成员数量 | 团队成员 | 团队GitHub账户 | 团队仓库地址 |\n")
             f.write("|----------|----------|----------|----------|----------------|--------------|\n")
             for idx, team in enumerate(sorted_teams, 1):
                 members_text = ', '.join([f"{member.name}(@{member.github_id})" for member in team.members])
-                row = [str(idx), team.team_name, str(len(team.members)), members_text, team.team_github_account, team.team_repo_url]
+                mark = '⚠️' if team.team_name in invalid_team_names else ''
+                row = [str(idx), f"{team.team_name}{mark}", str(len(team.members)), members_text, team.team_github_account, team.team_repo_url]
                 f.write("| " + " | ".join(row) + " |\n")
             f.write("\n")
             # 成员信息表格（保持原样）
@@ -289,13 +304,93 @@ class GitHubTeamInfoCollector:
                     f.write("| " + " | ".join(row) + " |\n")
                     idx += 1
             f.write("\n")
-            # 添加说明
             f.write("---\n\n")
             f.write("*本报告由 GitHub 团队信息收集器自动生成*")
         print(f"💾 Markdown 报告已保存: {filename}")
     
-    def export_to_html(self, teams: List[TeamInfo], filename: str):
-        """导出为 HTML 格式（包含团队和成员信息，含编号和汇总）"""
+    def _generate_html_with_multiple_views(self, teams: List[TeamInfo], markdown_content: str, invalid_team_names: set = None) -> str:
+        """生成包含多种视图的HTML内容"""
+        invalid_team_names = invalid_team_names or set()
+        # 转换Markdown为HTML（表格视图）
+        table_html = markdown.markdown(markdown_content, extensions=['tables'])
+        
+        # 生成卡片视图HTML
+        cards_html = self._generate_cards_view(teams)
+        
+        # 生成紧凑表格视图HTML
+        compact_html = self._generate_compact_table_view(teams, invalid_team_names)
+        
+        # 组合所有视图
+        html_content = f"""
+        <h1>📊 团队信息汇总报告</h1>
+        
+        <div class="view-toggle">
+            <button onclick="switchView('compact')" class="active">📊 紧凑表格</button>
+            <button onclick="switchView('table')">📋 完整表格</button>
+            <button onclick="switchView('cards')">🃏 卡片视图</button>
+        </div>
+        
+        <div id="compact-view" class="view-section active">
+            <div class="table-container">
+                {compact_html}
+            </div>
+        </div>
+        
+        <div id="table-view" class="view-section">
+            <div class="table-container">
+                {table_html}
+            </div>
+        </div>
+        
+        <div id="cards-view" class="view-section">
+            {cards_html}
+        </div>
+        """
+        
+        return html_content
+    
+    def _generate_cards_view(self, teams: List[TeamInfo]) -> str:
+        """生成卡片视图HTML"""
+        # 按团队人数排序，人数多的在前面
+        sorted_teams = sorted(teams, key=lambda team: len(team.members), reverse=True)
+        
+        cards_html = '<div class="team-cards">'
+        
+        for idx, team in enumerate(sorted_teams, 1):
+            cards_html += f"""
+            <div class="team-card">
+                <h3>#{idx} {team.team_name}</h3>
+                <div class="team-info">
+                    <p><strong>团队GitHub账户：</strong>{team.team_github_account}</p>
+                    <p><strong>团队仓库地址：</strong><a href="{team.team_repo_url}" target="_blank">{team.team_repo_url}</a></p>
+                    <p><strong>提交时间：</strong>{team.submission_time}</p>
+                    <p><strong>评论作者：</strong>{team.comment_author}</p>
+                </div>
+                <h4>团队成员：</h4>
+                <ul class="members-list">
+            """
+            
+            for member in team.members:
+                cards_html += f"""
+                    <li>
+                        <div class="member-name">{member.name}</div>
+                        <div class="member-github">
+                            <a href="{member.github_url}" target="_blank">@{member.github_id}</a>
+                        </div>
+                    </li>
+                """
+            
+            cards_html += """
+                </ul>
+            </div>
+            """
+        
+        cards_html += '</div>'
+        return cards_html
+    
+    def _generate_compact_table_view(self, teams: List[TeamInfo], invalid_team_names: set = None) -> str:
+        """生成紧凑表格视图HTML"""
+        invalid_team_names = invalid_team_names or set()
         # 按团队人数排序，人数多的在前面
         sorted_teams = sorted(teams, key=lambda team: len(team.members), reverse=True)
         
@@ -307,8 +402,127 @@ class GitHubTeamInfoCollector:
             n = len(team.members)
             group_sizes[n] = group_sizes.get(n, 0) + 1
         group_size_summary = ', '.join([f"{size}人组: {count}个" for size, count in sorted(group_sizes.items(), reverse=True)])
+        
+        compact_html = f"""
+        <div class="stats">
+            <strong>统计信息：</strong> 总团队数：{total_teams} | 总成员数：{total_members} | 团队规模分布：{group_size_summary}
+        </div>
+        
+        <h2>👥 团队信息</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>编号</th>
+                    <th>团队名称</th>
+                    <th>成员数量</th>
+                    <th>团队成员</th>
+                    <th>团队GitHub账户</th>
+                    <th>团队仓库地址</th>
+                </tr>
+            </thead>
+            <tbody>
+        """
+        
+        for idx, team in enumerate(sorted_teams, 1):
+            members_text = ', '.join([f"{member.name}(@{member.github_id})" for member in team.members])
+            highlight = ' style="background:#ffe5b2;"' if team.team_name in invalid_team_names else ''
+            warn = ' <span title="成员数不合规" style="color:#ff9800;font-size:1.2em;">⚠️</span>' if team.team_name in invalid_team_names else ''
+            compact_html += f"""
+                <tr{highlight}>
+                    <td>{idx}</td>
+                    <td>{team.team_name}{warn}</td>
+                    <td>{len(team.members)}</td>
+                    <td>{members_text}</td>
+                    <td>{team.team_github_account}</td>
+                    <td><a href=\"{team.team_repo_url}\" target=\"_blank\">查看仓库</a></td>
+                </tr>
+            """
+        
+        compact_html += """
+            </tbody>
+        </table>
+        
+        <h2>👤 成员信息</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>成员编号</th>
+                    <th>团队名称</th>
+                    <th>成员姓名</th>
+                    <th>GitHub ID</th>
+                    <th>GitHub 链接</th>
+                    <th>团队GitHub账户</th>
+                    <th>团队仓库地址</th>
+                </tr>
+            </thead>
+            <tbody>
+        """
+        
+        idx = 1
+        for team in sorted_teams:
+            for member in team.members:
+                compact_html += f"""
+                    <tr>
+                        <td>{idx}</td>
+                        <td>{team.team_name}</td>
+                        <td>{member.name}</td>
+                        <td>{member.github_id}</td>
+                        <td><a href="{member.github_url}" target="_blank">@{member.github_id}</a></td>
+                        <td>{team.team_github_account}</td>
+                        <td><a href="{team.team_repo_url}" target="_blank">查看仓库</a></td>
+                    </tr>
+                """
+                idx += 1
+        
+        compact_html += """
+            </tbody>
+        </table>
+        """
+        
+        return compact_html
+    
+    def validate_teams(self, teams: List[TeamInfo], min_members: int = 1, max_members: int = 5) -> Dict[str, List[str]]:
+        """验证团队信息并返回问题列表和不合规团队名集合"""
+        issues = {
+            'missing_info': [],
+            'duplicate_teams': [],
+            'invalid_urls': [],
+            'member_count_issues': [],
+            'member_count_invalid_team_names': set()
+        }
+        
+        team_names = set()
+        
+        for team in teams:
+            # 检查重复团队名称
+            if team.team_name in team_names:
+                issues['duplicate_teams'].append(team.team_name)
+            team_names.add(team.team_name)
+            
+            # 检查必填信息
+            if not team.team_name or not team.members:
+                issues['missing_info'].append(f"团队 {team.team_name} 信息不完整")
+            
+            # 检查成员数量
+            if len(team.members) < min_members:
+                issues['member_count_issues'].append(f"团队 {team.team_name} 成员数量过少 ({len(team.members)} < {min_members})")
+                issues['member_count_invalid_team_names'].add(team.team_name)
+            elif len(team.members) > max_members:
+                issues['member_count_issues'].append(f"团队 {team.team_name} 成员数量过多 ({len(team.members)} > {max_members})")
+                issues['member_count_invalid_team_names'].add(team.team_name)
+            
+            # 检查 URL 格式
+            if team.team_repo_url and not team.team_repo_url.startswith('https://github.com/'):
+                issues['invalid_urls'].append(f"团队 {team.team_name} 的仓库地址格式不正确")
+        
+        return issues
 
-        # 生成Markdown内容
+    def sort_teams_by_member_count(self, teams):
+        """按成员数降序排序团队"""
+        return sorted(teams, key=lambda team: len(team.members), reverse=True)
+
+    def generate_markdown_content(self, teams, total_teams, total_members, group_size_summary):
+        """生成团队和成员信息的Markdown内容"""
         md_content = f"""# 📊 团队信息汇总报告
 
 **导出时间：** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
@@ -323,8 +537,7 @@ class GitHubTeamInfoCollector:
 | 团队编号 | 团队名称 | 成员1姓名 | 成员1GitHub | 成员1链接 | 成员2姓名 | 成员2GitHub | 成员2链接 | 成员3姓名 | 成员3GitHub | 成员3链接 | 团队GitHub账户 | 团队仓库地址 | 提交时间 | 评论作者 |
 |----------|----------|-----------|-------------|-----------|-----------|-------------|-----------|-----------|-------------|-----------|----------------|--------------|----------|----------|
 """
-        
-        for idx, team in enumerate(sorted_teams, 1):
+        for idx, team in enumerate(teams, 1):
             members_info = []
             for i in range(3):
                 if i < len(team.members):
@@ -334,30 +547,45 @@ class GitHubTeamInfoCollector:
                     members_info.extend(['', '', ''])
             row = [str(idx), team.team_name, *members_info, team.team_github_account, team.team_repo_url, team.submission_time, team.comment_author]
             md_content += "| " + " | ".join(row) + " |\n"
-        
         md_content += "\n## 👤 成员信息\n\n"
         md_content += "| 成员编号 | 团队名称 | 成员姓名 | GitHub ID | GitHub 链接 | 团队GitHub账户 | 团队仓库地址 | 提交时间 | 评论作者 |\n"
         md_content += "|----------|----------|----------|-----------|-------------|----------------|--------------|----------|----------|\n"
-        
         idx = 1
-        for team in sorted_teams:
+        for team in teams:
             for member in team.members:
                 row = [str(idx), team.team_name, member.name, member.github_id, member.github_url, team.team_github_account, team.team_repo_url, team.submission_time, team.comment_author]
                 md_content += "| " + " | ".join(row) + " |\n"
                 idx += 1
-        
         md_content += "\n---\n\n*本报告由 GitHub 团队信息收集器自动生成*"
+        return md_content
 
-        # 生成多种视图的HTML内容
-        html_content = self._generate_html_with_multiple_views(teams, md_content)
-        
-        # 添加CSS样式
+    def generate_html_content(self, teams, md_content, invalid_team_names):
+        """生成多视图HTML内容（不写文件）"""
+        return self._generate_html_with_multiple_views(teams, md_content, invalid_team_names)
+
+    def write_file(self, content, filename):
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+    def export_to_html(self, teams: List[TeamInfo], filename: str, invalid_team_names: set = None):
+        """导出为 HTML 格式（包含团队和成员信息，含编号和汇总）"""
+        sorted_teams = self.sort_teams_by_member_count(teams)
+        total_teams = len(sorted_teams)
+        total_members = sum(len(team.members) for team in sorted_teams)
+        group_sizes = {}
+        for team in sorted_teams:
+            n = len(team.members)
+            group_sizes[n] = group_sizes.get(n, 0) + 1
+        group_size_summary = ', '.join([f"{size}人组: {count}个" for size, count in sorted(group_sizes.items(), reverse=True)])
+        md_content = self.generate_markdown_content(sorted_teams, total_teams, total_members, group_size_summary)
+        html_content = self.generate_html_content(sorted_teams, md_content, invalid_team_names)
         html_template = f"""<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang=\"zh-CN\">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset=\"UTF-8\">
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
     <title>团队信息汇总报告</title>
+    <script src=\"https://cdn.jsdelivr.net/npm/marked/marked.min.js\"></script>
     <style>
         body {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -524,237 +752,47 @@ class GitHubTeamInfoCollector:
                 padding: 4px 6px;
             }}
         }}
+        /* 移除.file-links-table、.preview-btn、#file-preview等相关样式 */
+        /* 统一所有表格表头色 */
+        .table-view th {{ background-color: #3498db; color: white; font-weight: bold; }}
     </style>
+    <script>
+    function switchView(view) {{
+      document.querySelectorAll('.view-section').forEach(function(sec) {{
+        sec.classList.remove('active');
+      }});
+      document.querySelectorAll('.view-toggle button').forEach(function(btn) {{
+        btn.classList.remove('active');
+      }});
+      document.getElementById(view+'-view').classList.add('active');
+      var btns = document.querySelectorAll('.view-toggle button');
+      if(view==='compact') btns[0].classList.add('active');
+      if(view==='table') btns[1].classList.add('active');
+      if(view==='cards') btns[2].classList.add('active');
+    }}
+    function syntaxHighlight(json) {{
+      if (typeof json != 'string') json = JSON.stringify(json, undefined, 2);
+      return json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {{
+          var cls = 'number';
+          if (/^"/.test(match)) {{
+            if (/:$/.test(match)) cls = 'key';
+            else cls = 'string';
+          }} else if (/true|false/.test(match)) cls = 'boolean';
+          else if (/null/.test(match)) cls = 'null';
+          return '<span class="' + cls + '">' + match + '</span>';
+        }});
+    }}
+    </script>
 </head>
 <body>
-    <div class="container">
+    <div class=\"container\">
         {html_content}
     </div>
-    <script>
-        // 切换视图功能
-        function switchView(viewType) {{
-            // 隐藏所有视图
-            document.querySelectorAll('.view-section').forEach(section => {{
-                section.classList.remove('active');
-            }});
-            // 显示选中的视图
-            document.getElementById(viewType + '-view').classList.add('active');
-            // 更新按钮状态
-            document.querySelectorAll('.view-toggle button').forEach(btn => {{
-                btn.classList.remove('active');
-            }});
-            event.target.classList.add('active');
-        }}
-    </script>
 </body>
 </html>"""
-        
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.write(html_template)
-        
+        self.write_file(html_template, filename)
         print(f"💾 HTML 报告已保存: {filename}")
-    
-    def _generate_html_with_multiple_views(self, teams: List[TeamInfo], markdown_content: str) -> str:
-        """生成包含多种视图的HTML内容"""
-        # 转换Markdown为HTML（表格视图）
-        table_html = markdown.markdown(markdown_content, extensions=['tables'])
-        
-        # 生成卡片视图HTML
-        cards_html = self._generate_cards_view(teams)
-        
-        # 生成紧凑表格视图HTML
-        compact_html = self._generate_compact_table_view(teams)
-        
-        # 组合所有视图
-        html_content = f"""
-        <h1>📊 团队信息汇总报告</h1>
-        
-        <div class="view-toggle">
-            <button onclick="switchView('compact')" class="active">📊 紧凑表格</button>
-            <button onclick="switchView('table')">📋 完整表格</button>
-            <button onclick="switchView('cards')">🃏 卡片视图</button>
-        </div>
-        
-        <div id="compact-view" class="view-section active">
-            <div class="table-container">
-                {compact_html}
-            </div>
-        </div>
-        
-        <div id="table-view" class="view-section">
-            <div class="table-container">
-                {table_html}
-            </div>
-        </div>
-        
-        <div id="cards-view" class="view-section">
-            {cards_html}
-        </div>
-        """
-        
-        return html_content
-    
-    def _generate_cards_view(self, teams: List[TeamInfo]) -> str:
-        """生成卡片视图HTML"""
-        # 按团队人数排序，人数多的在前面
-        sorted_teams = sorted(teams, key=lambda team: len(team.members), reverse=True)
-        
-        cards_html = '<div class="team-cards">'
-        
-        for idx, team in enumerate(sorted_teams, 1):
-            cards_html += f"""
-            <div class="team-card">
-                <h3>#{idx} {team.team_name}</h3>
-                <div class="team-info">
-                    <p><strong>团队GitHub账户：</strong>{team.team_github_account}</p>
-                    <p><strong>团队仓库地址：</strong><a href="{team.team_repo_url}" target="_blank">{team.team_repo_url}</a></p>
-                    <p><strong>提交时间：</strong>{team.submission_time}</p>
-                    <p><strong>评论作者：</strong>{team.comment_author}</p>
-                </div>
-                <h4>团队成员：</h4>
-                <ul class="members-list">
-            """
-            
-            for member in team.members:
-                cards_html += f"""
-                    <li>
-                        <div class="member-name">{member.name}</div>
-                        <div class="member-github">
-                            <a href="{member.github_url}" target="_blank">@{member.github_id}</a>
-                        </div>
-                    </li>
-                """
-            
-            cards_html += """
-                </ul>
-            </div>
-            """
-        
-        cards_html += '</div>'
-        return cards_html
-    
-    def _generate_compact_table_view(self, teams: List[TeamInfo]) -> str:
-        """生成紧凑表格视图HTML"""
-        # 按团队人数排序，人数多的在前面
-        sorted_teams = sorted(teams, key=lambda team: len(team.members), reverse=True)
-        
-        # 汇总统计
-        total_teams = len(teams)
-        total_members = sum(len(team.members) for team in teams)
-        group_sizes = {}
-        for team in teams:
-            n = len(team.members)
-            group_sizes[n] = group_sizes.get(n, 0) + 1
-        group_size_summary = ', '.join([f"{size}人组: {count}个" for size, count in sorted(group_sizes.items(), reverse=True)])
-        
-        compact_html = f"""
-        <div class="stats">
-            <strong>统计信息：</strong> 总团队数：{total_teams} | 总成员数：{total_members} | 团队规模分布：{group_size_summary}
-        </div>
-        
-        <h2>👥 团队信息</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>编号</th>
-                    <th>团队名称</th>
-                    <th>成员数量</th>
-                    <th>团队成员</th>
-                    <th>团队GitHub账户</th>
-                    <th>团队仓库地址</th>
-                </tr>
-            </thead>
-            <tbody>
-        """
-        
-        for idx, team in enumerate(sorted_teams, 1):
-            members_text = ', '.join([f"{member.name}(@{member.github_id})" for member in team.members])
-            compact_html += f"""
-                <tr>
-                    <td>{idx}</td>
-                    <td>{team.team_name}</td>
-                    <td>{len(team.members)}</td>
-                    <td>{members_text}</td>
-                    <td>{team.team_github_account}</td>
-                    <td><a href="{team.team_repo_url}" target="_blank">查看仓库</a></td>
-                </tr>
-            """
-        
-        compact_html += """
-            </tbody>
-        </table>
-        
-        <h2>👤 成员信息</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>成员编号</th>
-                    <th>团队名称</th>
-                    <th>成员姓名</th>
-                    <th>GitHub ID</th>
-                    <th>GitHub 链接</th>
-                    <th>团队GitHub账户</th>
-                    <th>团队仓库地址</th>
-                </tr>
-            </thead>
-            <tbody>
-        """
-        
-        idx = 1
-        for team in sorted_teams:
-            for member in team.members:
-                compact_html += f"""
-                    <tr>
-                        <td>{idx}</td>
-                        <td>{team.team_name}</td>
-                        <td>{member.name}</td>
-                        <td>{member.github_id}</td>
-                        <td><a href="{member.github_url}" target="_blank">@{member.github_id}</a></td>
-                        <td>{team.team_github_account}</td>
-                        <td><a href="{team.team_repo_url}" target="_blank">查看仓库</a></td>
-                    </tr>
-                """
-                idx += 1
-        
-        compact_html += """
-            </tbody>
-        </table>
-        """
-        
-        return compact_html
-    
-    def validate_teams(self, teams: List[TeamInfo], min_members: int = 1, max_members: int = 5) -> Dict[str, List[str]]:
-        """验证团队信息并返回问题列表"""
-        issues = {
-            'missing_info': [],
-            'duplicate_teams': [],
-            'invalid_urls': [],
-            'member_count_issues': []
-        }
-        
-        team_names = set()
-        
-        for team in teams:
-            # 检查重复团队名称
-            if team.team_name in team_names:
-                issues['duplicate_teams'].append(team.team_name)
-            team_names.add(team.team_name)
-            
-            # 检查必填信息
-            if not team.team_name or not team.members:
-                issues['missing_info'].append(f"团队 {team.team_name} 信息不完整")
-            
-            # 检查成员数量
-            if len(team.members) < min_members:
-                issues['member_count_issues'].append(f"团队 {team.team_name} 成员数量过少 ({len(team.members)} < {min_members})")
-            elif len(team.members) > max_members:
-                issues['member_count_issues'].append(f"团队 {team.team_name} 成员数量过多 ({len(team.members)} > {max_members})")
-            
-            # 检查 URL 格式
-            if team.team_repo_url and not team.team_repo_url.startswith('https://github.com/'):
-                issues['invalid_urls'].append(f"团队 {team.team_name} 的仓库地址格式不正确")
-        
-        return issues
 
 
 def main():
@@ -766,8 +804,8 @@ def main():
     parser.add_argument('--output-dir', help='输出目录路径 (默认: ../data)')
     
     # 数据验证配置
-    parser.add_argument('--min-members', type=int, default=1, help='最小团队成员数 (默认: 1)')
-    parser.add_argument('--max-members', type=int, default=5, help='最大团队成员数 (默认: 5)')
+    parser.add_argument('--min-members', type=int, default=3, help='最小团队成员数 (默认: 3)')
+    parser.add_argument('--max-members', type=int, default=4, help='最大团队成员数 (默认: 4)')
     parser.add_argument('--no-validate', action='store_true', help='跳过数据验证')
     
     # 输出格式配置
@@ -826,7 +864,7 @@ def main():
     # 导出团队信息 CSV
     if not args.no_csv:
         csv_filename = output_dir / f"{repo_name}_teams.csv"
-        collector.export_to_csv(teams, str(csv_filename))
+        collector.export_to_csv(teams, str(csv_filename), issues['member_count_invalid_team_names'], issues['member_count_issues'])
         exported_files.append(f"团队信息 CSV: {csv_filename}")
         
         # 导出成员信息 CSV
@@ -848,14 +886,52 @@ def main():
     # 导出 Markdown 报告
     if not args.no_markdown:
         markdown_filename = output_dir / f"{repo_name}_report.md"
-        collector.export_to_markdown(teams, str(markdown_filename))
+        collector.export_to_markdown(teams, str(markdown_filename), issues['member_count_invalid_team_names'], issues['member_count_issues'])
         exported_files.append(f"Markdown 报告: {markdown_filename}")
     
     # 导出 HTML 报告
     if not args.no_html:
         html_filename = output_dir / f"{repo_name}_report.html"
-        collector.export_to_html(teams, str(html_filename))
+        collector.export_to_html(teams, str(html_filename), issues['member_count_invalid_team_names'])
         exported_files.append(f"HTML 报告: {html_filename}")
+        # 自动打开HTML报告，优先用系统命令，详细日志
+        html_path = str(html_filename.resolve()) if hasattr(html_filename, 'resolve') else str(html_filename)
+        print(f"[LOG] 操作系统: {sys.platform}")
+        print(f"[LOG] HTML报告绝对路径: {html_path}")
+        opened = False
+        try:
+            if sys.platform == 'darwin':
+                print(f"[LOG] macOS: 调用 os.system('open \"{html_path}\"') ...")
+                ret = os.system(f'open "{html_path}"')
+                print(f"[LOG] os.system open 返回: {ret}")
+                if ret == 0:
+                    print(f"🌐 已用 open 命令自动在浏览器中打开: {html_path}")
+                    opened = True
+            elif sys.platform.startswith('linux'):
+                print(f"[LOG] Linux: 调用 os.system('xdg-open \"{html_path}\"') ...")
+                ret = os.system(f'xdg-open "{html_path}"')
+                print(f"[LOG] os.system xdg-open 返回: {ret}")
+                if ret == 0:
+                    print(f"🌐 已用 xdg-open 命令自动在浏览器中打开: {html_path}")
+                    opened = True
+            elif sys.platform.startswith('win'):
+                print(f"[LOG] Windows: 调用 os.startfile ...")
+                os.startfile(html_path)
+                print(f"🌐 已用 os.startfile 自动在浏览器中打开: {html_path}")
+                opened = True
+        except Exception as e:
+            print(f"⚠️ 系统命令自动打开异常: {e}")
+        if not opened:
+            try:
+                print(f"[LOG] 调用 webbrowser.open({html_path}) ...")
+                opened = webbrowser.open(html_path)
+                print(f"[LOG] webbrowser.open 返回: {opened}")
+                if opened:
+                    print(f"🌐 已自动在浏览器中打开: {html_path}")
+                else:
+                    print(f"⚠️ webbrowser.open未能自动打开，请手动打开: {html_path}")
+            except Exception as e:
+                print(f"⚠️ webbrowser.open异常: {e}，请手动打开: {html_path}")
     
     # 如果没有导出任何文件，显示警告
     if not exported_files:
