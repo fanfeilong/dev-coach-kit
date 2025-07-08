@@ -310,6 +310,9 @@ class GitHubTeamInfoCollector:
     
     def export_to_html(self, teams: List[TeamInfo], filename: str):
         """导出为 HTML 格式（包含团队和成员信息，含编号和汇总）"""
+        # 按团队人数排序，人数多的在前面
+        sorted_teams = sorted(teams, key=lambda team: len(team.members), reverse=True)
+        
         # 汇总统计
         total_teams = len(teams)
         total_members = sum(len(team.members) for team in teams)
@@ -317,7 +320,7 @@ class GitHubTeamInfoCollector:
         for team in teams:
             n = len(team.members)
             group_sizes[n] = group_sizes.get(n, 0) + 1
-        group_size_summary = ', '.join([f"{size}人组: {count}个" for size, count in sorted(group_sizes.items())])
+        group_size_summary = ', '.join([f"{size}人组: {count}个" for size, count in sorted(group_sizes.items(), reverse=True)])
 
         # 生成Markdown内容
         md_content = f"""# 📊 团队信息汇总报告
@@ -335,7 +338,7 @@ class GitHubTeamInfoCollector:
 |----------|----------|-----------|-------------|-----------|-----------|-------------|-----------|-----------|-------------|-----------|----------------|--------------|----------|----------|
 """
         
-        for idx, team in enumerate(teams, 1):
+        for idx, team in enumerate(sorted_teams, 1):
             members_info = []
             for i in range(3):
                 if i < len(team.members):
@@ -351,7 +354,7 @@ class GitHubTeamInfoCollector:
         md_content += "|----------|----------|----------|-----------|-------------|----------------|--------------|----------|----------|\n"
         
         idx = 1
-        for team in teams:
+        for team in sorted_teams:
             for member in team.members:
                 row = [str(idx), team.team_name, member.name, member.github_id, member.github_url, team.team_github_account, team.team_repo_url, team.submission_time, team.comment_author]
                 md_content += "| " + " | ".join(row) + " |\n"
@@ -607,9 +610,12 @@ class GitHubTeamInfoCollector:
     
     def _generate_cards_view(self, teams: List[TeamInfo]) -> str:
         """生成卡片视图HTML"""
+        # 按团队人数排序，人数多的在前面
+        sorted_teams = sorted(teams, key=lambda team: len(team.members), reverse=True)
+        
         cards_html = '<div class="team-cards">'
         
-        for idx, team in enumerate(teams, 1):
+        for idx, team in enumerate(sorted_teams, 1):
             cards_html += f"""
             <div class="team-card">
                 <h3>#{idx} {team.team_name}</h3>
@@ -643,6 +649,9 @@ class GitHubTeamInfoCollector:
     
     def _generate_compact_table_view(self, teams: List[TeamInfo]) -> str:
         """生成紧凑表格视图HTML"""
+        # 按团队人数排序，人数多的在前面
+        sorted_teams = sorted(teams, key=lambda team: len(team.members), reverse=True)
+        
         # 汇总统计
         total_teams = len(teams)
         total_members = sum(len(team.members) for team in teams)
@@ -650,7 +659,7 @@ class GitHubTeamInfoCollector:
         for team in teams:
             n = len(team.members)
             group_sizes[n] = group_sizes.get(n, 0) + 1
-        group_size_summary = ', '.join([f"{size}人组: {count}个" for size, count in sorted(group_sizes.items())])
+        group_size_summary = ', '.join([f"{size}人组: {count}个" for size, count in sorted(group_sizes.items(), reverse=True)])
         
         compact_html = f"""
         <div class="stats">
@@ -672,7 +681,7 @@ class GitHubTeamInfoCollector:
             <tbody>
         """
         
-        for idx, team in enumerate(teams, 1):
+        for idx, team in enumerate(sorted_teams, 1):
             members_text = ', '.join([f"{member.name}(@{member.github_id})" for member in team.members])
             compact_html += f"""
                 <tr>
@@ -706,7 +715,7 @@ class GitHubTeamInfoCollector:
         """
         
         idx = 1
-        for team in teams:
+        for team in sorted_teams:
             for member in team.members:
                 compact_html += f"""
                     <tr>
