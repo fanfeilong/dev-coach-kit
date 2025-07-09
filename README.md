@@ -58,7 +58,7 @@ python test_team_info_collector.py --mode test
 ## 📋 项目结构
 
 ```
-how-to-develop/
+dev-coach-kit/
 ├── data/                        # 数据输出目录
 │   ├── team_info_*.csv         # 团队信息 CSV 文件
 │   └── team_info_*.json        # 团队信息 JSON 文件
