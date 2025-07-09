@@ -1,5 +1,6 @@
-# how-to-develop
-软件开发指南
+# dev-coach-kit
+
+软件开发教学指南+工具包
 
 ## 📖 文档
 
