@@ -1,6 +1,6 @@
 # dev-coach-kit
 
-软件开发教学指南+工具包
+软件开发教学指南+工具包，以下所有的文档索引包括了指南文件本身和工具软件开发按时间顺序添加的夹杂的文档，它本身真实展示“草稿”
 
 ## 📖 文档指南
 
@@ -11,7 +11,7 @@
 [团队信息收集脚本使用指南](./doc/2.team_info_collector.md)
 
 ### 🎨 解决方案文档
-[HTML多视图解决方案](./doc/3.html_multiple_views_solution.md)
+[团队信息收集脚本生成的HTML多视图解决方案](./doc/3.html_multiple_views_solution.md)
 
 ### 🔧 Git 使用指南
 [Git 基础教程与最佳实践](./doc/4.git.md)
